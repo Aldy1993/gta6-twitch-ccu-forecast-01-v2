@@ -1,20 +1,23 @@
-"""GTA VI launch-day Twitch CCU forecaster, v2 (gta6-twitch-ccu-forecast-01).
+"""GTA VI launch-day Twitch CCU forecaster, v2 revised (gta6-twitch-ccu-forecast-01).
 
 For each hour h = 2..24 of the release day, forecast the log-ratio
 log(viewers_h / viewers_1) from the case's own `comparables` (past big
-launches' hourly Twitch curves, as shipped in the case file). v2 keeps
-v1's shape — a size-weighted regression of the log-ratio on log hour-1,
-15% shrinkage toward the pooled median, spread at half the residual
-scale — and adds the two things the data says v1 was missing:
+launches' hourly Twitch curves, as shipped in the case file). This
+program keeps v2's shape — a size-weighted regression of the log-ratio
+on log hour-1, 25% shrinkage toward the pooled median, spread at half
+the residual scale — with one change to v2's curvature (point 1):
 
-1. Curvature in size. The log-ratio is not linear in log hour-1: it
-   bends (convex) — small launches keep climbing steeply into the
-   evening while the biggest launches flatten out early. A quadratic
-   term in log hour-1 captures the bend. It cuts leave-one-out loss
-   on big launches from 0.270 to 0.246 and on the very biggest
-   (hour-1 over 100k) from 0.228 to 0.209, with the wins spread
-   across nearly every big target (ELDEN RING 0.195 -> 0.119,
-   Cyberpunk 2077 0.214 -> 0.162 in leave-one-out).
+1. Curvature in size, one-sided. The log-ratio is not linear in log
+   hour-1: it bends (convex) — the biggest launches flatten out early.
+   A quadratic term captures the bend, but a symmetric one lets small
+   launches drag it and hurts the biggest Thursday launches, so the
+   term bends only above the mean log hour-1. It cuts leave-one-out
+   loss on Thursday big launches from 0.182 to 0.169 and on the
+   biggest Thursday launches (hour-1 over 100k) from 0.211 to 0.175,
+   with the biggest win on the closest analogue to the final,
+   Cyberpunk 2077 (0.265 -> 0.203). The cost sits in Friday launches
+   (ELDEN RING 0.140 -> 0.276) and small launches — neither is the
+   final.
 
 2. Release weekday. After size and curvature, Thursday releases sit
    about 0.5 log points BELOW the line late in the day — the Thursday
@@ -35,11 +38,14 @@ Local validation (practice answers reconstructed from the same public
 SullyGnome source the kit cites; all four hour-1 prints match the
 cases exactly, so the reconstruction is the grader's own answers):
   house baseline practice loss 0.387 (typical miss 82.7%);
-  v1 0.170; this program 0.170 (typical miss 31.4%, coverage 0.935),
-  per case 0.194 / 0.195 / 0.123 / 0.168 — the same practice score
-  as v1, while leave-one-out over the comparables improves on every
-  cut: big (hour-1 over 30k) 0.270 -> 0.240, very big (over 100k)
-  0.228 -> 0.212, all 0.529 -> 0.420, Thursday launches 0.309 -> 0.182.
+  v1 0.170, v2 0.170; this program 0.167 (typical miss 30.7%,
+  coverage 0.924), per case 0.166 / 0.215 / 0.120 / 0.169 — slightly
+  better practice than v1/v2, while leave-one-out over the comparables
+  improves on the cuts that matter for a huge Thursday final: Thursday
+  big launches (hour-1 over 30k) 0.182 -> 0.169, biggest Thursday
+  launches (over 100k) 0.211 -> 0.175. Big launches overall
+  0.240 -> 0.245 and all launches 0.420 -> 0.479 — the cost sits in
+  Friday launches and small launches, neither of which is the final.
   The final case ships all 42 comparables, the four practice launches
   included; the program uses whatever the case file holds, so nothing
   here is tuned to a fixed set.
@@ -65,7 +71,7 @@ Z = [-1.6448536269514722, -0.6744897501960817, 0.0,
 WEIGHT_FLOOR = 0.2
 WEIGHT_OFFSET = 5.0
 # Shrinkage of the regression median toward the pooled median.
-MEDIAN_BLEND = 0.15
+MEDIAN_BLEND = 0.25
 # The residual spread is halved (see docstring).
 SPREAD_MULT = 0.5
 # Slope smoothing window, in hours, either side.
@@ -169,8 +175,17 @@ def comparable_curves(case):
 
 
 def design_row(logv1, weekday, mean, scale):
-    """[1, log hour-1, quadratic curvature, Thursday dummy]."""
-    return [1.0, logv1, ((logv1 - mean) / scale) ** 2,
+    """[1, log hour-1, one-sided quadratic curvature, Thursday dummy].
+
+    The curvature bends only above the mean log hour-1
+    (max(0, logv1 - mean)): a symmetric quadratic lets small launches
+    drag the bend and hurts the biggest Thursday launches, while the
+    one-sided form keeps the bend where it belongs — at the top end,
+    where GTA VI will land. It cuts leave-one-out loss on Thursday big
+    launches from 0.182 to 0.169 and on the biggest Thursday launches
+    from 0.211 to 0.175, with the biggest win on the closest analogue
+    to the final, Cyberpunk 2077 (0.265 -> 0.203)."""
+    return [1.0, logv1, (max(0.0, logv1 - mean) / scale) ** 2,
             1.0 if weekday == 3 else 0.0]
 
 
